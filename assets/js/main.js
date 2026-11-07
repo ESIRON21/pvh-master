@@ -3,8 +3,8 @@
 // ===== Контакты: меняйте только здесь =====
 const CONTACTS = {
   phone: '+7 (000) 000-00-00',      // номер для звонков и WhatsApp
-  telegram: 'https://t.me/username', // ссылка на Telegram (позже — на бота)
-  vk: 'https://vk.com/username',     // ссылка на ВКонтакте (позже — на бота)
+  telegram: 'https://t.me/username', // ссылка на Telegram (позже – на бота)
+  vk: 'https://vk.com/username',     // ссылка на ВКонтакте (позже – на бота)
 };
 const DEFAULT_MSG = 'Здравствуйте! Хочу узнать стоимость работ.';
 // ==========================================
@@ -225,4 +225,108 @@ if (dock && contacts && 'IntersectionObserver' in window) {
   new IntersectionObserver(([entry]) => {
     dock.classList.toggle('is-hidden', entry.isIntersecting);
   }, { threshold: 0.25 }).observe(contacts);
+}
+
+/* ---------- Просмотр фото на весь экран ---------- */
+const lightbox = document.getElementById('lightbox');
+if (lightbox && typeof lightbox.showModal === 'function') {
+  const lbImg = lightbox.querySelector('.lb-img');
+  const lbCap = lightbox.querySelector('.lb-cap');
+  const lbCount = lightbox.querySelector('.lb-count');
+  const lbPrev = lightbox.querySelector('[data-lb-prev]');
+  const lbNext = lightbox.querySelector('[data-lb-next]');
+  let group = [];
+  let index = 0;
+
+  // самый крупный вариант из srcset
+  const fullSrc = (img) => {
+    const set = img.getAttribute('srcset');
+    if (!set) return img.getAttribute('src');
+    return set.split(',').map((s) => s.trim().split(/\s+/)).sort((a, b) => parseInt(b[1], 10) - parseInt(a[1], 10))[0][0];
+  };
+  const show = (i) => {
+    index = (i + group.length) % group.length;
+    const item = group[index];
+    lbImg.src = item.src;
+    lbImg.alt = item.alt;
+    lbCap.textContent = item.cap;
+    lbCount.textContent = group.length > 1 ? `${index + 1} из ${group.length}` : '';
+    lbPrev.hidden = lbNext.hidden = group.length < 2;
+  };
+  const open = (items, i) => {
+    group = items;
+    show(i);
+    lightbox.showModal();
+  };
+  const expandButton = (label) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'zoom-btn glass';
+    b.setAttribute('aria-label', label);
+    b.innerHTML = '<svg class="icon" aria-hidden="true"><use href="#i-expand"/></svg>';
+    return b;
+  };
+
+  // фото деталей и этапы балкона: по нажатию на снимок или на значок
+  const galleries = [
+    { items: '.pane', img: 'img', cap: (el) => el.querySelector('p').textContent },
+    { items: '.story-slide', img: '.story-img', cap: (el) => {
+      const c = el.querySelector('.story-cap');
+      const head = c.querySelector('b').textContent;
+      return `${head}. ${c.textContent.slice(head.length).trim()}`;
+    } },
+  ];
+  galleries.forEach(({ items, img, cap }) => {
+    const els = Array.from(document.querySelectorAll(items));
+    const list = els.map((el) => {
+      const im = el.querySelector(img);
+      return { src: fullSrc(im), alt: im.alt, cap: cap(el).trim() };
+    });
+    els.forEach((el, i) => {
+      const im = el.querySelector(img);
+      im.classList.add('zoomable');
+      im.addEventListener('click', () => open(list, i));
+      const btn = expandButton('Открыть фото на весь экран');
+      btn.addEventListener('click', () => open(list, i));
+      el.appendChild(btn);
+    });
+  });
+
+  // было / стало: значок открывает оба снимка, саму картинку не трогаем, она для ползунка
+  document.querySelectorAll('[data-compare]').forEach((cmp) => {
+    const before = cmp.querySelector('.compare-before');
+    const after = cmp.querySelector('.compare-img:not(.compare-before)');
+    const title = cmp.closest('figure').querySelector('figcaption').textContent.trim();
+    const list = [
+      { src: fullSrc(before), alt: before.alt, cap: `Было. ${title}` },
+      { src: fullSrc(after), alt: after.alt, cap: `Стало. ${title}` },
+    ];
+    const btn = expandButton('Открыть фото было и стало на весь экран');
+    btn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    btn.addEventListener('click', () => open(list, 0));
+    cmp.appendChild(btn);
+  });
+
+  lbPrev.addEventListener('click', () => show(index - 1));
+  lbNext.addEventListener('click', () => show(index + 1));
+  lightbox.querySelector('[data-lb-close]').addEventListener('click', () => lightbox.close());
+  // клик по тёмному фону вокруг снимка закрывает просмотр
+  lightbox.addEventListener('click', (e) => {
+    if (e.target === lightbox || e.target.classList.contains('lb-figure')) lightbox.close();
+  });
+  lightbox.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') show(index - 1);
+    if (e.key === 'ArrowRight') show(index + 1);
+  });
+  // свайп влево-вправо на телефоне
+  let sx = null;
+  lightbox.addEventListener('pointerdown', (e) => { sx = e.clientX; });
+  lightbox.addEventListener('pointerup', (e) => {
+    if (sx === null || group.length < 2) return;
+    const dx = e.clientX - sx;
+    sx = null;
+    if (Math.abs(dx) > 50) show(index + (dx < 0 ? 1 : -1));
+  });
+  // событие close приходит с задержкой: не стираем снимок, если просмотр уже открыт заново
+  lightbox.addEventListener('close', () => { if (!lightbox.open) lbImg.removeAttribute('src'); });
 }
